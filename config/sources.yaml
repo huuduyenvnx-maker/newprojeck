@@ -1,0 +1,393 @@
+# AgriIntel Data Sources Configuration
+# Vietnamese Agricultural Commodities Data Pipeline
+
+# Data source definitions for 15 Vietnamese commodities
+# Each source defines data fetching, validation rules, and quality thresholds
+
+version: "2.0"
+description: "AgriIntel Vietnamese agricultural commodity data sources with quality pipeline"
+
+# Global settings
+global:
+  timezone: "Asia/Ho_Chi_Minh"
+  base_currency: "USD"
+  frequency: "daily"
+  quality_threshold: 0.85
+  max_price_variance: 0.15  # 15% maximum daily price variance
+  outlier_detection_method: "evt_zscore"
+  outlier_threshold: 3.5
+
+# Data sources configuration
+sources:
+  # Government and Official Sources
+  - name: "Ministry of Agriculture Vietnam"
+    id: "mard_vn"
+    type: "api"
+    url: "https://api.mard.gov.vn/v1/commodity-prices"
+    frequency: "daily"
+    reliability: 0.95
+    commodities: ["rice_5pct", "coffee_robusta", "rubber_tsr20", "pepper_black"]
+    regions: ["mekong_delta", "southeast", "tay_nguyen"]
+    authentication:
+      type: "api_key"
+      key_header: "X-API-Key"
+      key_env: "MARD_API_KEY"
+    rate_limits:
+      requests_per_hour: 1000
+      daily_quota: 10000
+    data_format: "json"
+    mapping:
+      date: "date"
+      commodity: "commodity_code"
+      price: "price_usd_per_ton"
+      currency: "currency"
+      market: "market_location"
+      volume: "trading_volume"
+    validation_rules:
+      - "price_range_check"
+      - "temporal_consistency" 
+      - "cross_commodity_correlation"
+    error_handling:
+      retry_attempts: 3
+      backoff_strategy: "exponential"
+      fallback_source: "vneconomy"
+
+  - name: "Vietnam National University Agriculture"
+    id: "vnua"
+    type: "api"
+    url: "https://vnua.edu.vn/api/market-data"
+    frequency: "daily"
+    reliability: 0.88
+    commodities: ["rice_5pct", "corn_maize", "soybean", "cassava_chips"]
+    regions: ["red_river_delta", "north_central", "southeast"]
+    authentication:
+      type: "bearer_token"
+      token_env: "VNUA_ACCESS_TOKEN"
+    data_format: "csv"
+    validation_rules:
+      - "statistical_outlier_detection"
+      - "seasonal_pattern_check"
+
+  # International Market Sources
+  - name: "Chicago Board of Trade"
+    id: "cbot"
+    type: "api"
+    url: "https://www.cmegroup.com/market-data/quotes/agricultural.json"
+    frequency: "realtime"
+    reliability: 0.99
+    commodities: ["corn_maize", "soybean", "wheat"]
+    regions: ["global"]
+    data_format: "json"
+    mapping:
+      date: "trade_date"
+      commodity: "product_code"
+      price: "settle_price_usd"
+      volume: "volume"
+    validation_rules:
+      - "futures_basis_check"
+      - "arbitrage_opportunity_detection"
+    transformation:
+      - type: "currency_conversion"
+        from: "USD/bushel"
+        to: "USD/ton"
+        conversion_factor: 39.368  # bushel to ton for corn
+
+  - name: "Singapore Exchange"
+    id: "sgx"
+    type: "api"  
+    url: "https://api2.sgx.com/derivatives/historical"
+    frequency: "daily"
+    reliability: 0.92
+    commodities: ["rubber_tsr20", "palm_oil_cpo"]
+    regions: ["southeast_asia"]
+    authentication:
+      type: "oauth2"
+      client_id_env: "SGX_CLIENT_ID"
+      client_secret_env: "SGX_CLIENT_SECRET"
+    data_format: "json"
+    validation_rules:
+      - "futures_contango_check"
+      - "regional_basis_validation"
+
+  # Vietnamese Market Data Providers
+  - name: "Vietnam Commodity Exchange"
+    id: "vnx"
+    type: "api"
+    url: "https://vnx.vn/api/v2/market-data"
+    frequency: "daily"
+    reliability: 0.87
+    commodities: ["coffee_robusta", "pepper_black", "rice_5pct", "rubber_tsr20"]
+    regions: ["ho_chi_minh", "tay_nguyen", "mekong_delta"]
+    authentication:
+      type: "api_key"
+      key_env: "VNX_API_KEY"
+    data_format: "json"
+    validation_rules:
+      - "domestic_price_validation"
+      - "export_import_parity_check"
+
+  - name: "AgroBank Market Intelligence"
+    id: "agrobank"
+    type: "manual"
+    frequency: "daily"
+    reliability: 0.82
+    commodities: ["rice_5pct", "coffee_robusta", "cassava_chips"]
+    regions: ["mekong_delta", "tay_nguyen"]
+    data_format: "excel"
+    file_pattern: "AgroBank_Market_*.xlsx"
+    validation_rules:
+      - "manual_data_consistency"
+      - "bank_vs_market_spread_check"
+
+  # News and Internet Sources (Enhanced with LLM Extraction)
+  - name: "VnExpress Agriculture"
+    id: "vnexpress_agri"
+    type: "web_scraping"
+    url: "https://vnexpress.net/kinh-doanh/nong-nghiep"
+    frequency: "hourly"
+    reliability: 0.75
+    commodities: ["all"]
+    regions: ["vietnam"]
+    extraction_method: "llm_powered"
+    llm_config:
+      provider: "openai"
+      model: "gpt-4o-mini"
+      temperature: 0.1
+      prompt_template: |
+        Extract numerical price information for Vietnamese agricultural commodities from this news article.
+        Focus on: rice, coffee, rubber, black pepper, corn, soybean, wheat, sugar, palm oil, cassava.
+        Return JSON with: commodity, price, unit, currency, date, location, source_reliability (0-1).
+    validation_rules:
+      - "news_sentiment_analysis"
+      - "llm_confidence_threshold"
+    quality_threshold: 0.6  # Lower threshold for news sources
+
+  - name: "CafeF Agriculture Section"
+    id: "cafef_agri"
+    type: "web_scraping"
+    url: "https://cafef.vn/nong-lam-ngu.chn"
+    frequency: "hourly"
+    reliability: 0.73
+    extraction_method: "llm_powered"
+    llm_config:
+      provider: "gemini"
+      model: "gemini-2.0-flash"
+      temperature: 0.0
+    validation_rules:
+      - "cross_reference_validation"
+      - "publication_recency_check"
+
+  # Fertilizer Sources
+  - name: "International Fertilizer Association"
+    id: "ifa"
+    type: "api"
+    url: "https://www.fertilizer.org/api/market-data"
+    frequency: "weekly"
+    reliability: 0.94
+    commodities: ["urea_46n", "dap_18_46_0", "mop_kcl_60", "tsp_46"]
+    regions: ["global", "southeast_asia"]
+    authentication:
+      type: "subscription"
+      credentials_env: "IFA_CREDENTIALS"
+    validation_rules:
+      - "fertilizer_seasonal_patterns"
+      - "energy_price_correlation"
+
+  - name: "Petrovietnam Fertilizer"
+    id: "pvc_fertilizer"
+    type: "api"
+    url: "https://pvcfc.com.vn/api/fertilizer-prices"
+    frequency: "daily"
+    reliability: 0.89
+    commodities: ["urea_46n", "npk_16_16_8"]
+    regions: ["vietnam"]
+    validation_rules:
+      - "domestic_fertilizer_pricing"
+      - "production_cost_validation"
+
+# Validation Rules Configuration
+validation_rules:
+  
+  # Level 1: Basic Data Quality
+  price_range_check:
+    type: "range_validation"
+    rules:
+      rice_5pct: { min: 300, max: 800 }      # USD/ton
+      coffee_robusta: { min: 1500, max: 4000 }
+      rubber_tsr20: { min: 1000, max: 3000 }
+      pepper_black: { min: 3000, max: 8000 }
+      corn_maize: { min: 150, max: 400 }
+      soybean: { min: 300, max: 800 }
+      wheat: { min: 200, max: 500 }
+      sugar_raw11: { min: 300, max: 800 }
+      palm_oil_cpo: { min: 600, max: 1200 }
+      cassava_chips: { min: 150, max: 300 }
+      urea_46n: { min: 300, max: 700 }
+      dap_18_46_0: { min: 400, max: 800 }
+      npk_16_16_8: { min: 350, max: 750 }
+      mop_kcl_60: { min: 250, max: 600 }
+      tsp_46: { min: 400, max: 900 }
+
+  # Level 2: Temporal Consistency
+  temporal_consistency:
+    type: "time_series_validation"
+    max_daily_change: 0.1  # 10% maximum daily change
+    rolling_window: 7      # 7-day rolling validation
+    seasonal_adjustment: true
+    weekend_trading: false  # Most Vietnamese markets closed on weekends
+    holiday_calendar: "vietnam"
+
+  # Level 3: Statistical Outlier Detection
+  statistical_outlier_detection:
+    type: "outlier_detection"
+    method: "isolation_forest"
+    contamination: 0.05  # 5% outlier rate
+    features: ["price", "volume", "price_change", "volatility"]
+    z_score_threshold: 3.0
+
+  # Level 4: Cross-Commodity Correlation
+  cross_commodity_correlation:
+    type: "correlation_validation"
+    correlation_pairs:
+      - ["corn_maize", "soybean"]      # Feed grain correlation
+      - ["urea_46n", "dap_18_46_0"]    # Fertilizer correlation
+      - ["coffee_robusta", "sugar_raw11"]  # Tropical commodity correlation
+    min_correlation: 0.3
+    validation_window: 30  # 30-day correlation window
+
+  # Level 5: External Factor Validation
+  external_factor_validation:
+    type: "exogenous_validation"
+    factors:
+      weather:
+        - rainfall_mekong_delta
+        - temperature_tay_nguyen
+        - el_nino_index
+      economic:
+        - usd_vnd_exchange_rate
+        - vietnam_inflation_rate
+        - brent_crude_oil
+      policy:
+        - export_quotas
+        - import_tariffs
+        - subsidy_programs
+
+  # Level 6: LLM-Powered Validation
+  llm_confidence_threshold:
+    type: "llm_validation"
+    min_confidence: 0.7
+    cross_validation: true  # Validate with both OpenAI and Gemini
+    agreement_threshold: 0.8
+    evidence_requirements:
+      - source_credibility
+      - price_justification
+      - market_context
+
+  # Level 7: Market Microstructure
+  market_microstructure:
+    type: "microstructure_validation"
+    bid_ask_spread_max: 0.05  # 5% maximum spread
+    volume_price_correlation: true
+    market_impact_thresholds:
+      rice_5pct: 1000        # ton minimum for price impact
+      coffee_robusta: 500
+      rubber_tsr20: 200
+
+# Quality Gate Configuration
+quality_gates:
+  
+  # Composite Confidence Score (CCS) thresholds
+  ccs_thresholds:
+    auto_publish: 85      # Automatically publish if CCS >= 85
+    publish_warning: 70   # Publish with warning if 70 <= CCS < 85
+    manual_review: 50     # Manual review if 50 <= CCS < 70
+    hold_forecast: 0      # Hold forecast if CCS < 50
+
+  # Individual component weights for CCS calculation
+  ccs_weights:
+    agreement_score: 0.30
+    evidence_score: 0.25
+    source_credibility_score: 0.20
+    temporal_consistency_score: 0.15
+    model_confidence_score: 0.10
+
+  # Vietnamese market adjustments
+  market_adjustments:
+    commodity_volatility:
+      rice_5pct: 1.0       # Base volatility
+      coffee_robusta: 1.3  # Higher volatility
+      pepper_black: 1.5    # Highest volatility
+    seasonal_factors:
+      harvest_season_q4: 0.9  # Lower confidence during harvest
+      planting_season_q1: 0.95
+      growing_season_q2q3: 1.0
+    regional_reliability:
+      mekong_delta: 1.0    # Most reliable region
+      tay_nguyen: 0.95
+      red_river_delta: 0.92
+      north_central: 0.88
+
+# Error Handling and Monitoring
+error_handling:
+  
+  retry_policy:
+    max_retries: 3
+    backoff_multiplier: 2
+    max_backoff: 300  # 5 minutes
+    
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout: 600  # 10 minutes
+    
+  fallback_strategy:
+    primary_failure: "use_secondary_source"
+    all_sources_failure: "use_cached_data"
+    cache_expiry: 3600  # 1 hour
+
+monitoring:
+  
+  alerts:
+    - condition: "source_failure_rate > 0.1"
+      severity: "high"
+      notification: "slack_channel"
+      
+    - condition: "data_quality_score < 0.8"
+      severity: "medium"
+      notification: "email"
+      
+    - condition: "price_anomaly_detected"
+      severity: "low"
+      notification: "dashboard"
+
+  metrics:
+    - name: "data_ingestion_rate"
+      type: "counter"
+      labels: ["source", "commodity", "region"]
+      
+    - name: "validation_success_rate" 
+      type: "histogram"
+      labels: ["rule", "source"]
+      
+    - name: "quality_score_distribution"
+      type: "histogram"
+      buckets: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+
+# Schedule Configuration
+schedules:
+  
+  daily_ingestion:
+    cron: "0 6,18 * * *"  # 6 AM and 6 PM Vietnam time
+    sources: ["mard_vn", "vnx", "agrobank"]
+    
+  hourly_news_scraping:
+    cron: "0 * * * *"     # Every hour
+    sources: ["vnexpress_agri", "cafef_agri"]
+    
+  weekly_fertilizer_update:
+    cron: "0 8 * * 1"     # Monday 8 AM
+    sources: ["ifa", "pvc_fertilizer"]
+    
+  realtime_futures:
+    cron: "*/15 * * * *"  # Every 15 minutes during market hours
+    sources: ["cbot", "sgx"]
+    market_hours_only: true

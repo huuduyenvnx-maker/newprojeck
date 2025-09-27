@@ -1,0 +1,85 @@
+name: AgriIntel CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # Frontend Tests
+  frontend-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm install
+      
+    - name: Run frontend tests
+      run: npm test -- --coverage
+      
+    - name: Build frontend
+      run: npm run build
+
+  # Backend Tests
+  backend-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11]
+        
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install UV
+      run: pip install uv
+      
+    - name: Install dependencies
+      run: uv sync
+      
+    - name: Run ML service tests
+      run: |
+        cd ml-service
+        python -m pytest tests/ --verbose
+        
+    - name: Run server tests  
+      run: |
+        cd server
+        npm install
+        npm test
+
+  # Security Scan
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run security verification
+      run: node security-verification-test.js
+
+  # Deploy (only on main branch)
+  deploy:
+    needs: [frontend-test, backend-test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to production
+      run: |
+        echo "Deploying to production..."
+        # Add your deployment commands here
+        # ./deploy.sh hoặc các lệnh deploy khác
