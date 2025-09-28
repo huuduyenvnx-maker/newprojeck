@@ -1,1 +1,0 @@
-function l(e){if(!e||e.length===0)return 0;const i=e.filter(t=>t.verified);if(i.length===0)return 0;const c={openai:.6,gemini:.4};let n=0,r=0;return i.forEach(t=>{const o=c[t.provider]||.5,f=parseFloat(t.confidence);r+=f*o,n+=o}),n>0?r/n:0}function u(e){return e>=.8?"High":e>=.6?"Medium":"Low"}export{l as c,u as g};
